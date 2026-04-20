@@ -87,7 +87,7 @@ class Trainer:
                     "optimizer_state": self.optimizer.state_dict(),
                     "metrics": metrics,
                 }, path)
-                print(f"  → Checkpoint sauvegardé : {path}")
+                print(f"  >> Checkpoint saved: {path}")
 
         self.writer.close()
         print("Entraînement terminé.")
