@@ -21,8 +21,16 @@ def _heuristic_carracing(step: int, env, rng: np.random.Generator) -> np.ndarray
     return np.array([steering, gas, brake], dtype=np.float32)
 
 
+def _mixed_carracing(step: int, env, rng: np.random.Generator) -> np.ndarray:
+    """Mélange 50/50 par step : capture haute fréquence (random) + structure (heuristique)."""
+    if rng.random() < 0.5:
+        return env.action_space.sample()
+    return _heuristic_carracing(step, env, rng)
+
+
 POLICIES: dict[str, Callable] = {
     "heuristic": _heuristic_carracing,
+    "mixed": _mixed_carracing,
 }
 
 

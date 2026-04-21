@@ -176,9 +176,33 @@ La heuristique produit des trajectoires structurées (steering oscillant) → co
 **Conclusion** : pour un world model utilisable en planning, la heuristique gagne — un MSE constant à 0.17 sur tout l'horizon est exploitable, contrairement à la divergence à 10⁷. Le 1-step seul n'est pas un bon proxy de l'utilité du modèle.
 
 **Pistes V2 prioritaires** :
-- Mixer random + heuristique pour avoir les deux régimes dans le dataset
+- ~~Mixer random + heuristique pour avoir les deux régimes dans le dataset~~ ✅ V1.7
 - Training avec teacher-forced rollout 5-step (la loss elle-même propage les erreurs)
 - Agent PPO pré-entraîné pour des trajectoires near-optimal
+
+---
+
+## Expérience V1.7 — politique mixte (50/50 random + heuristic)
+
+Hypothèse : combiner les deux régimes pour cumuler la précision 1-step de random et la stabilité long-horizon de heuristic.
+
+| Métrique | Random | Heuristic | **Mixed** |
+|---|---:|---:|---:|
+| 1-step MSE | **0.0087** | 0.038 | 0.030 |
+| Rollout h=5 | **0.042** | 0.164 | 0.103 |
+| Rollout h=10 | **0.141** | 0.198 | 0.160 |
+| Rollout h=20 | 119 | **0.170** | 0.229 |
+| Variance latente moy | 0.076 | 0.059 | **0.150** |
+| Effective rank | 14.7 | 13.7 | **23.1** (+57%) |
+
+**Verdict — la mixte est globalement la plus utile** :
+- **Meilleur effective rank** : 23.1 / 256, soit +57% vs random et +69% vs heuristic. Le latent est sensiblement plus riche.
+- Rollout long horizon stable (0.23 à h=20, pas de divergence).
+- Coût : 1-step et h=5 dégradés vs random (×3-4), mais sans atteindre la dégradation pure de heuristic.
+
+**Insight** : la diversité d'actions (random) génère des observations diverses qui forcent l'encodeur à utiliser plus de dimensions latentes ; la structure (heuristic) garantit la stabilité du rollout. Les deux signaux sont complémentaires, pas redondants.
+
+**Recommandation** : pour un world model destiné au planning, V1.7 (mixed) > V1.5 (random) > V1.6 (heuristic) en utilité globale.
 
 ---
 

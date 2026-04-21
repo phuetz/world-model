@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument("--env", type=str, default=None,
                         help="ID Gymnasium (ex: CarRacing-v3). Défaut: dataset synthétique.")
     parser.add_argument("--policy", type=str, default="random",
-                        choices=["random", "heuristic"],
+                        choices=["random", "heuristic", "mixed"],
                         help="Politique de collecte (gym uniquement)")
     parser.add_argument("--seed", type=int, default=0, help="Seed pour la collecte gym")
     parser.add_argument("--log-dir", type=str, default="runs/world_model")
