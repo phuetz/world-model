@@ -79,7 +79,74 @@ class WorldModel(nn.Module):
         # unsqueeze pour permettre à DataParallel de gather les scalaires (concat dim 0)
         return {k: v.unsqueeze(0) for k, v in losses.items()}
 
+    def forward_rollout(
+        self,
+        obs_seq: torch.Tensor,
+        action_seq: torch.Tensor,
+        reward_seq: torch.Tensor | None = None,
+        done_seq: torch.Tensor | None = None,
+    ) -> Dict[str, torch.Tensor]:
+        """Teacher-forced rollout sur K steps.
+
+        obs_seq    : (B, K+1, C, H, W) — obs[0]..obs[K]
+        action_seq : (B, K, action_dim)
+        reward_seq : (B, K) optionnel
+        done_seq   : (B, K) optionnel
+
+        À chaque step k, on prédit z_{k+1} depuis z_k (autoregressif sur le latent prédit)
+        et on compare à encode(obs_{k+1}) en stop-gradient. La loss est moyennée sur K.
+        """
+        B, K_plus_1, C, H, W = obs_seq.shape
+        K = K_plus_1 - 1
+
+        with torch.no_grad():
+            obs_flat = obs_seq.reshape(B * K_plus_1, C, H, W)
+            z_targets_flat = self.obs_encoder(obs_flat)
+            z_targets = z_targets_flat.reshape(B, K_plus_1, -1)
+
+        z = self.obs_encoder(obs_seq[:, 0])
+        loss_pred_total = 0.0
+        loss_reward_total = 0.0
+        loss_done_total = 0.0
+        z_preds_for_reg = []
+
+        for k in range(K):
+            a_enc = self.action_encoder(action_seq[:, k])
+            z = self.dynamics(z, a_enc)
+            loss_pred_total = loss_pred_total + nn.functional.mse_loss(z, z_targets[:, k + 1])
+            z_preds_for_reg.append(z)
+            if self.cfg.use_reward_head and reward_seq is not None:
+                r_pred = self.dynamics.predict_reward(z)
+                loss_reward_total = loss_reward_total + nn.functional.mse_loss(r_pred, reward_seq[:, k])
+            if self.cfg.use_done_head and done_seq is not None:
+                d_pred = self.dynamics.predict_done(z)
+                loss_done_total = loss_done_total + nn.functional.binary_cross_entropy_with_logits(
+                    d_pred, done_seq[:, k].float()
+                )
+
+        loss_pred = loss_pred_total / K
+        z_preds = torch.stack(z_preds_for_reg, dim=1).reshape(B * K, -1)
+        loss_reg = self.regularizer(z_preds)
+
+        losses: Dict[str, torch.Tensor] = {
+            "loss_pred": loss_pred,
+            "loss_reg":  loss_reg,
+            "loss_total": loss_pred + loss_reg,
+        }
+        if self.cfg.use_reward_head and reward_seq is not None:
+            losses["loss_reward"] = loss_reward_total / K
+            losses["loss_total"] = losses["loss_total"] + losses["loss_reward"]
+        if self.cfg.use_done_head and done_seq is not None:
+            losses["loss_done"] = loss_done_total / K
+            losses["loss_total"] = losses["loss_total"] + losses["loss_done"]
+
+        return {k: v.unsqueeze(0) for k, v in losses.items()}
+
     def forward(self, *args, **kwargs):
+        # Heuristique : 5 args = rollout (obs_seq, action_seq, reward_seq, done_seq)
+        # 5 args = step (obs_t, action_t, obs_tp1, reward_t, done_t) selon ndim de obs.
+        if len(args) >= 1 and args[0].ndim == 5:
+            return self.forward_rollout(*args, **kwargs)
         return self.forward_step(*args, **kwargs)
 
     def encode(self, obs: torch.Tensor) -> torch.Tensor:

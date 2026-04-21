@@ -48,16 +48,17 @@ class Trainer:
         totals: Dict[str, float] = {}
         steps = 0
 
-        for obs_t, action_t, obs_tp1, reward_t, done_t in tqdm(loader, desc=f"Epoch {epoch}", leave=False):
-            obs_t    = obs_t.to(self.device)
-            action_t = action_t.to(self.device)
-            obs_tp1  = obs_tp1.to(self.device)
-            reward_t = reward_t.to(self.device)
-            done_t   = done_t.to(self.device)
-
+        for batch in tqdm(loader, desc=f"Epoch {epoch}", leave=False):
+            batch = [t.to(self.device) for t in batch]
             self.optimizer.zero_grad()
-            losses = self.model(obs_t, action_t, obs_tp1, reward_t, done_t)
-            # DataParallel gather concat sur dim 0 → mean pour réduire à un scalaire
+
+            if len(batch) == 4:
+                # SequenceWindowDataset : (obs_seq, action_seq, reward_seq, done_seq)
+                losses = self.model(*batch)
+            else:
+                # GymTransitionDataset / SyntheticDataset : 5-tuple
+                losses = self.model(*batch)
+
             losses = {k: v.mean() for k, v in losses.items()}
             losses["loss_total"].backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)

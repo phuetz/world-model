@@ -206,6 +206,40 @@ Hypothèse : combiner les deux régimes pour cumuler la précision 1-step de ran
 
 ---
 
+## V1.8 — teacher-forced rollout (k=5)
+
+Solution architecturale au compounding error : la loss elle-même propage les erreurs sur 5 steps.
+
+- Nouveau `WorldModel.forward_rollout(obs_seq, action_seq)` : à chaque step k, prédit z_{k+1} depuis le z_k **prédit** (pas l'encodage réel) et compare à `encode(obs_{k+1})` en stop-gradient. Loss = moyenne MSE sur K.
+- Nouveau `SequenceWindowDataset` : expose des fenêtres de K+1 obs consécutives, filtrées des passages cross-`done`.
+- Flag `--rollout-k 5` dans `train.py` (combiné avec `--policy mixed` pour la diversité).
+- Coût : ~3× plus lent par epoch (12 s vs 3.5 s).
+
+**Synthèse 4-way (eval seed différents, 2000 transitions chacun)** :
+
+| Métrique | V1.5 random | V1.6 heuristic | V1.7 mixed | **V1.8 rollout-5** |
+|---|---:|---:|---:|---:|
+| 1-step MSE | **0.0087** | 0.038 | 0.030 | 0.013 |
+| Rollout h=5 | 0.042 | 0.164 | 0.103 | **0.021** |
+| Rollout h=10 | 0.141 | 0.198 | 0.160 | **0.028** |
+| Rollout h=20 | 119 | 0.170 | 0.229 | **0.038** |
+| Effective rank | 14.7 | 13.7 | **23.1** | 20.6 |
+
+**Résultat clé — MSE quasi-plat de h=1 à h=20 (×3), vs ×14 000 pour la baseline random** :
+- Le compounding error est éliminé.
+- Le 1-step est correct (0.013, entre random 0.0087 et heuristique 0.038).
+- L'effective rank reste élevé (20.6, +40% vs random).
+
+**V1.8 est le checkpoint à utiliser pour le planning** : c'est le seul qui prédit de façon fiable jusqu'à h=20.
+
+**Vraies pistes V3** :
+- Rollout k variable (curriculum 1→10) au lieu de fixe à 5
+- DDP pour réduire le surcoût du rollout multi-step
+- Encoder ViT (le CNN sature)
+- Planning CEM/MPC réel sur ce world model
+
+---
+
 ## Arborescence
 
 ```
@@ -234,12 +268,12 @@ world-model/
 
 ---
 
-## Pistes V2
+## Pistes V2 (résolues durant la nuit du 21–22 avril 2026)
 
 - ~~Dataset réel (Gymnasium / CarRacing / Atari) au lieu de synthétique~~ ✅ V1.5
 - ~~Évaluation : rollouts multi-step, variance/rang effectif du latent~~ ✅ V1.5
-- Corriger le collapse du latent (λ_var plus fort, politique non-aléatoire)
-- Training multi-step (teacher-forced rollout) pour stabiliser h>10
+- ~~Corriger le collapse du latent (λ_var plus fort, politique non-aléatoire)~~ → expé λ_var=0.15 NÉG, V1.7 mixed +57% rank
+- ~~Training multi-step (teacher-forced rollout) pour stabiliser h>10~~ ✅ V1.8
 - Planification CEM/MPC à partir de `predict_next()`
 - Encoder ViT à la place du CNN
 - DDP (au lieu de DP) pour vraiment scaler multi-GPU

@@ -135,3 +135,50 @@ def make_gym_dataloader(
 ) -> DataLoader:
     dataset = GymTransitionDataset(cfg, env_id, n_samples, seed=seed, policy=policy)
     return DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=0)
+
+
+class SequenceWindowDataset(Dataset):
+    """Wrappe un GymTransitionDataset et expose des fenêtres de K transitions consécutives.
+
+    Item i renvoie :
+      obs_seq    : (K+1, C, H, W) — obs[i], obs[i+1], ..., obs[i+K]
+      action_seq : (K, action_dim)
+      reward_seq : (K,)
+      done_seq   : (K,)
+
+    Les fenêtres traversant un done sont exclues (l'index est filtré à la construction).
+    """
+
+    def __init__(self, base: GymTransitionDataset, k: int) -> None:
+        self.base = base
+        self.k = k
+        n = len(base)
+        valid: list[int] = []
+        for start in range(n - k):
+            if not bool(base.dones[start : start + k].any()):
+                valid.append(start)
+        self.valid_starts = torch.tensor(valid, dtype=torch.long)
+
+    def __len__(self) -> int:
+        return len(self.valid_starts)
+
+    def __getitem__(self, idx: int):
+        start = int(self.valid_starts[idx])
+        k = self.k
+        # obs_seq de longueur k+1 : on prend obs_t[start..start+k-1] puis obs_tp1[start+k-1]
+        obs_seq = torch.empty(k + 1, *self.base.obs_t.shape[1:])
+        obs_seq[:k] = self.base.obs_t[start : start + k]
+        obs_seq[k] = self.base.obs_tp1[start + k - 1]
+        action_seq = self.base.actions[start : start + k]
+        reward_seq = self.base.rewards[start : start + k]
+        done_seq = self.base.dones[start : start + k]
+        return obs_seq, action_seq, reward_seq, done_seq
+
+
+def make_sequence_dataloader(
+    cfg: WorldModelConfig, env_id: str, n_samples: int, k: int,
+    seed: int = 0, policy: str = "random",
+) -> DataLoader:
+    base = GymTransitionDataset(cfg, env_id, n_samples, seed=seed, policy=policy)
+    seq = SequenceWindowDataset(base, k)
+    return DataLoader(seq, batch_size=cfg.batch_size, shuffle=True, num_workers=0)

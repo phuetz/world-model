@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.world_model.config.config import WorldModelConfig
 from src.world_model.models.world_model import WorldModel
 from src.world_model.data.synthetic import make_dataloader
-from src.world_model.data.gym_env import make_gym_dataloader
+from src.world_model.data.gym_env import make_gym_dataloader, make_sequence_dataloader
 from src.world_model.training.trainer import Trainer
 
 
@@ -23,6 +23,8 @@ def parse_args():
                         choices=["random", "heuristic", "mixed"],
                         help="Politique de collecte (gym uniquement)")
     parser.add_argument("--seed", type=int, default=0, help="Seed pour la collecte gym")
+    parser.add_argument("--rollout-k", type=int, default=1,
+                        help="Si >1, training teacher-forced sur séquences de K steps")
     parser.add_argument("--log-dir", type=str, default="runs/world_model")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
     return parser.parse_args()
@@ -47,9 +49,14 @@ def main():
     print("=" * 60)
 
     if args.env:
-        print(f"Collecte de transitions depuis {args.env} (policy={args.policy})...")
-        loader = make_gym_dataloader(cfg, args.env, n_samples=args.samples,
-                                     seed=args.seed, policy=args.policy)
+        if args.rollout_k > 1:
+            print(f"Collecte de transitions depuis {args.env} (policy={args.policy}, rollout-k={args.rollout_k})...")
+            loader = make_sequence_dataloader(cfg, args.env, n_samples=args.samples,
+                                              k=args.rollout_k, seed=args.seed, policy=args.policy)
+        else:
+            print(f"Collecte de transitions depuis {args.env} (policy={args.policy})...")
+            loader = make_gym_dataloader(cfg, args.env, n_samples=args.samples,
+                                         seed=args.seed, policy=args.policy)
     else:
         print("Génération des données synthétiques...")
         loader = make_dataloader(cfg, n_samples=args.samples)
