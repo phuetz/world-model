@@ -258,6 +258,16 @@ Premier usage réel du world model : un planner CEM/MPC qui imagine 12 steps en 
 
 **Le world model V1.8 est fonctionnel pour le planning** : CEM bat random de ~16% en moyenne, et de ×2 en médian. Marge modeste en absolu (CarRacing pénalise -0.1/step si pas de tile crossée), mais c'est le premier signal que le modèle est *utilisable* pour agir.
 
+**Test ablation — CEM nécessite V1.8** :
+
+| Planner setup | Return moyen | vs random |
+|---|---:|---:|
+| random (baseline) | −7.46 | — |
+| CEM avec V1.5 (compounding error) | **−20.16** | ×2.7 PIRE |
+| CEM avec V1.8 (rollout-trained) | **−6.32** | +16% mieux |
+
+CEM avec V1.5 fait **bien pire** que random : le world model halluciné mène le planner sur des actions catastrophiques. CEM avec V1.8 le bat. Différence ×3.2 entre les deux. Ça démontre que le teacher-forced rollout training n'est pas un nice-to-have, c'est une condition nécessaire pour utiliser un world model en planning.
+
 Note honnête : la heuristique fait pire que random ici parce que son steering oscillant la fait dévier vers l'herbe rapidement (vs random qui reste plus souvent au centre par chance). Ce n'est pas un échec du modèle.
 
 ```bash
