@@ -1,11 +1,29 @@
-"""Collecte de transitions depuis un environnement Gymnasium (politique aléatoire)."""
+"""Collecte de transitions depuis un environnement Gymnasium."""
 from __future__ import annotations
+from typing import Callable
+import math
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from ..config.config import WorldModelConfig
+
+
+def _heuristic_carracing(step: int, env, rng: np.random.Generator) -> np.ndarray:
+    """Politique heuristique pour CarRacing : accélère, oscille en steering.
+    action = (steering ∈ [-1,1], gas ∈ [0,1], brake ∈ [0,1]).
+    Donne des trajectoires plus structurées qu'une politique random."""
+    steering = 0.6 * math.sin(step * 0.05) + 0.2 * rng.standard_normal()
+    steering = float(np.clip(steering, -1.0, 1.0))
+    gas = 0.4 + 0.2 * rng.random()
+    brake = 0.0
+    return np.array([steering, gas, brake], dtype=np.float32)
+
+
+POLICIES: dict[str, Callable] = {
+    "heuristic": _heuristic_carracing,
+}
 
 
 def _preprocess_obs(obs: np.ndarray, target_h: int, target_w: int) -> torch.Tensor:
@@ -29,9 +47,14 @@ def _pad_action(action: np.ndarray | int | float, target_dim: int) -> torch.Tens
 
 
 class GymTransitionDataset(Dataset):
-    """Collecte n_samples transitions depuis un env Gymnasium avec une politique aléatoire."""
+    """Collecte n_samples transitions depuis un env Gymnasium.
 
-    def __init__(self, cfg: WorldModelConfig, env_id: str, n_samples: int, seed: int = 0) -> None:
+    policy='random' : env.action_space.sample()
+    policy='heuristic' : politique scriptée (cf. POLICIES)
+    """
+
+    def __init__(self, cfg: WorldModelConfig, env_id: str, n_samples: int,
+                 seed: int = 0, policy: str = "random") -> None:
         import gymnasium as gym
 
         self.cfg = cfg
@@ -40,6 +63,8 @@ class GymTransitionDataset(Dataset):
         env = gym.make(env_id)
         env.reset(seed=seed)
         env.action_space.seed(seed)
+        rng = np.random.default_rng(seed)
+        policy_fn = POLICIES.get(policy)
 
         obs_t_buf   = torch.empty(n_samples, C, H, W)
         obs_tp1_buf = torch.empty(n_samples, C, H, W)
@@ -48,10 +73,14 @@ class GymTransitionDataset(Dataset):
         done_buf    = torch.empty(n_samples)
 
         obs, _ = env.reset(seed=seed)
+        episode_step = 0
         i = 0
-        with tqdm(total=n_samples, desc=f"Collect {env_id}") as pbar:
+        with tqdm(total=n_samples, desc=f"Collect {env_id} ({policy})") as pbar:
             while i < n_samples:
-                action = env.action_space.sample()
+                if policy_fn is not None:
+                    action = policy_fn(episode_step, env, rng)
+                else:
+                    action = env.action_space.sample()
                 next_obs, reward, terminated, truncated, _ = env.step(action)
                 done = terminated or truncated
 
@@ -62,10 +91,12 @@ class GymTransitionDataset(Dataset):
                 done_buf[i]    = float(done)
 
                 i += 1
+                episode_step += 1
                 pbar.update(1)
 
                 if done:
                     obs, _ = env.reset()
+                    episode_step = 0
                 else:
                     obs = next_obs
 
@@ -91,7 +122,8 @@ class GymTransitionDataset(Dataset):
 
 
 def make_gym_dataloader(
-    cfg: WorldModelConfig, env_id: str, n_samples: int, seed: int = 0
+    cfg: WorldModelConfig, env_id: str, n_samples: int, seed: int = 0,
+    policy: str = "random",
 ) -> DataLoader:
-    dataset = GymTransitionDataset(cfg, env_id, n_samples, seed=seed)
+    dataset = GymTransitionDataset(cfg, env_id, n_samples, seed=seed, policy=policy)
     return DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=0)

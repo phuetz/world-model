@@ -19,6 +19,9 @@ def parse_args():
     parser.add_argument("--samples", type=int, default=10000, help="Nombre de transitions")
     parser.add_argument("--env", type=str, default=None,
                         help="ID Gymnasium (ex: CarRacing-v3). Défaut: dataset synthétique.")
+    parser.add_argument("--policy", type=str, default="random",
+                        choices=["random", "heuristic"],
+                        help="Politique de collecte (gym uniquement)")
     parser.add_argument("--seed", type=int, default=0, help="Seed pour la collecte gym")
     parser.add_argument("--log-dir", type=str, default="runs/world_model")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
@@ -44,8 +47,9 @@ def main():
     print("=" * 60)
 
     if args.env:
-        print(f"Collecte de transitions depuis {args.env}...")
-        loader = make_gym_dataloader(cfg, args.env, n_samples=args.samples, seed=args.seed)
+        print(f"Collecte de transitions depuis {args.env} (policy={args.policy})...")
+        loader = make_gym_dataloader(cfg, args.env, n_samples=args.samples,
+                                     seed=args.seed, policy=args.policy)
     else:
         print("Génération des données synthétiques...")
         loader = make_dataloader(cfg, n_samples=args.samples)

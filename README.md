@@ -155,6 +155,33 @@ Pour tester si la régularisation plus forte corrige le collapse latent identifi
 
 ---
 
+## Expérience V1.6 — politique heuristique (vs random)
+
+Suite logique de l'expé précédente : tester si une politique structurée corrige le rollout long horizon. Implémenté `--policy heuristic` dans `train.py` : steering = `0.6·sin(0.05·t) + 0.2·noise`, gas ∈ [0.4, 0.6], pas de frein. Trajectoires lisses, oscillation lente.
+
+| Métrique | Baseline (random) | V1.6 (heuristic) | Effet |
+|---|---:|---:|:---:|
+| 1-step MSE | 0.0087 | 0.038 | ×4 (pire) |
+| Rollout h=5 | 0.042 | 0.164 | ×4 (pire) |
+| Rollout h=10 | 0.141 | 0.198 | ×1.4 (pire) |
+| Rollout h=20 | **119** | **0.170** | **×700 (mieux)** |
+| Effective rank | 14.7 | 13.7 | -7% |
+
+**Découverte importante — trade-off précision vs stabilité** :
+
+La random policy produit du bruit haute-fréquence sur les actions → faible signal corrélé entre obs successives → 1-step facile à apprendre mais erreur auto-amplifiée en rollout (compounding).
+
+La heuristique produit des trajectoires structurées (steering oscillant) → contenu visuel plus dynamique mais corrélé temporellement → 1-step plus dur mais **rollout long horizon stable** (pas de divergence numérique).
+
+**Conclusion** : pour un world model utilisable en planning, la heuristique gagne — un MSE constant à 0.17 sur tout l'horizon est exploitable, contrairement à la divergence à 10⁷. Le 1-step seul n'est pas un bon proxy de l'utilité du modèle.
+
+**Pistes V2 prioritaires** :
+- Mixer random + heuristique pour avoir les deux régimes dans le dataset
+- Training avec teacher-forced rollout 5-step (la loss elle-même propage les erreurs)
+- Agent PPO pré-entraîné pour des trajectoires near-optimal
+
+---
+
 ## Arborescence
 
 ```
