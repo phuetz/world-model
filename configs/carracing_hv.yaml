@@ -1,0 +1,16 @@
+action_dim: 4
+batch_size: 1024
+encoder_type: conv
+hidden_dim: 512
+lambda_cov: 0.04
+lambda_mean: 0.01
+lambda_var: 0.15
+latent_dim: 256
+learning_rate: 0.0003
+max_epochs: 100
+obs_shape:
+- 3
+- 64
+- 64
+use_done_head: true
+use_reward_head: true

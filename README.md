@@ -133,6 +133,28 @@ V1.5 passe du synthétique à de vraies trajectoires Gymnasium (CarRacing-v3, po
 
 ---
 
+## Expérience — λ_var = 0.15 (vs 0.04 baseline)
+
+Pour tester si la régularisation plus forte corrige le collapse latent identifié ci-dessus, second run identique avec `lambda_var: 0.15` (config `configs/carracing_hv.yaml`, seed 1).
+
+| Métrique | Baseline `λ_var=0.04` | `λ_var=0.15` | Effet |
+|---|---:|---:|:---:|
+| 1-step MSE | 0.0087 | 0.0132 | ×1.5 (pire) |
+| Rollout h=5 | 0.042 | 0.080 | ×1.9 (pire) |
+| Rollout h=10 | 0.141 | **7.15** | ×50 (cassé) |
+| Rollout h=20 | 119 | **2.7×10⁷** | divergence |
+| Variance latente moy | 0.076 | 0.134 | +76% (mieux) |
+| Effective rank | 14.7 / 256 | 16.2 / 256 | +10% (mieux) |
+
+**Conclusion honnête — expérience utile mais négative** :
+- La reg fait son boulot primaire : variance latente ↑ +76%, rank effectif ↑ légèrement.
+- Mais le coût est lourd : la prédiction se dégrade à toutes les échelles, le rollout long horizon devient instable au point de diverger numériquement (variance latente trop "étalée" → erreurs auto-amplifiées en rollout).
+- **Le collapse latent n'est probablement pas la racine du problème**. Avec une politique aléatoire sur CarRacing, le signal visuel manque de diversité utile : forcer le latent à s'étaler artificiellement n'apporte pas de structure prédictible.
+
+**Vraie piste suivante** : remplacer la politique aléatoire par une heuristique steering ou un agent PPO pré-entraîné, plutôt que de tuner λ_var.
+
+---
+
 ## Arborescence
 
 ```
