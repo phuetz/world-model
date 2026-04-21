@@ -22,10 +22,16 @@ class Trainer:
         log_dir: str = "runs/world_model",
         checkpoint_dir: str = "checkpoints",
     ) -> None:
-        self.model = model
         self.cfg = cfg
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(self.device)
+        model.to(self.device)
+
+        n_gpus = torch.cuda.device_count() if self.device.type == "cuda" else 0
+        if n_gpus > 1:
+            self.model = nn.DataParallel(model)
+            print(f"DataParallel actif sur {n_gpus} GPUs : {[torch.cuda.get_device_name(i) for i in range(n_gpus)]}")
+        else:
+            self.model = model
 
         self.optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate)
         self.writer = SummaryWriter(log_dir)
@@ -50,7 +56,9 @@ class Trainer:
             done_t   = done_t.to(self.device)
 
             self.optimizer.zero_grad()
-            losses = self.model.forward_step(obs_t, action_t, obs_tp1, reward_t, done_t)
+            losses = self.model(obs_t, action_t, obs_tp1, reward_t, done_t)
+            # DataParallel gather concat sur dim 0 → mean pour réduire à un scalaire
+            losses = {k: v.mean() for k, v in losses.items()}
             losses["loss_total"].backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
@@ -78,12 +86,13 @@ class Trainer:
                 + f" | {elapsed:.1f}s"
             )
 
-            # Checkpoint toutes les 10 epochs
+            # Checkpoint toutes les 10 epochs (déballe DataParallel pour state_dict propre)
             if epoch % 10 == 0:
                 path = os.path.join(self.checkpoint_dir, f"epoch_{epoch:04d}.pt")
+                core_model = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
                 torch.save({
                     "epoch": epoch,
-                    "model_state": self.model.state_dict(),
+                    "model_state": core_model.state_dict(),
                     "optimizer_state": self.optimizer.state_dict(),
                     "metrics": metrics,
                 }, path)

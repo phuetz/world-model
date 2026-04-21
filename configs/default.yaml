@@ -4,7 +4,7 @@ latent_dim: 256
 encoder_type: conv
 hidden_dim: 512
 learning_rate: 0.0003
-batch_size: 64
+batch_size: 1024
 max_epochs: 100
 lambda_var: 0.04
 lambda_cov: 0.04

@@ -76,7 +76,11 @@ class WorldModel(nn.Module):
             losses["loss_done"] = nn.functional.binary_cross_entropy_with_logits(d_pred, done_t.float())
             losses["loss_total"] = losses["loss_total"] + losses["loss_done"]
 
-        return losses
+        # unsqueeze pour permettre à DataParallel de gather les scalaires (concat dim 0)
+        return {k: v.unsqueeze(0) for k, v in losses.items()}
+
+    def forward(self, *args, **kwargs):
+        return self.forward_step(*args, **kwargs)
 
     def encode(self, obs: torch.Tensor) -> torch.Tensor:
         """Encode une observation en vecteur latent (inference)."""
