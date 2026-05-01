@@ -1,0 +1,148 @@
+{
+  "_comment": "Workflow Wan 2.2 i2v API minimal — DRAFT V3.1 a valider via probe au matin. Reference modeles : split_files/diffusion_models/wan2.2_i2v_{high,low}_noise_14B_fp8_scaled.safetensors + text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors + vae/wan_2.1_vae.safetensors + loras/wan2.2_i2v_lightx2v_4steps_lora_v1_{high,low}_noise.safetensors. Pattern : 2x UNets (high noise -> low noise) avec LoRA lightx2v 4-steps appliquee a chaque, 1 KSamplerAdvanced par UNET.",
+  "1": {
+    "class_type": "UNETLoader",
+    "_meta": {"title": "Load Wan2.2 high noise"},
+    "inputs": {
+      "unet_name": "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "UNETLoader",
+    "_meta": {"title": "Load Wan2.2 low noise"},
+    "inputs": {
+      "unet_name": "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "3": {
+    "class_type": "CLIPLoader",
+    "_meta": {"title": "Load UMT5"},
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
+    }
+  },
+  "4": {
+    "class_type": "VAELoader",
+    "_meta": {"title": "Load Wan VAE"},
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {"title": "LoRA lightx2v high"},
+    "inputs": {
+      "lora_name": "wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+      "strength_model": 1.0,
+      "model": ["1", 0]
+    }
+  },
+  "6": {
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {"title": "LoRA lightx2v low"},
+    "inputs": {
+      "lora_name": "wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+      "strength_model": 1.0,
+      "model": ["2", 0]
+    }
+  },
+  "7": {
+    "class_type": "LoadImage",
+    "_meta": {"title": "Load source image"},
+    "inputs": {
+      "image": "v3src_default.png"
+    }
+  },
+  "8": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Positive prompt"},
+    "inputs": {
+      "text": "a placeholder positive prompt to be patched",
+      "clip": ["3", 0]
+    }
+  },
+  "9": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Negative prompt"},
+    "inputs": {
+      "text": "low quality, blurry, distorted",
+      "clip": ["3", 0]
+    }
+  },
+  "10": {
+    "class_type": "WanImageToVideo",
+    "_meta": {"title": "Wan i2v conditioning"},
+    "inputs": {
+      "positive": ["8", 0],
+      "negative": ["9", 0],
+      "vae": ["4", 0],
+      "start_image": ["7", 0],
+      "width": 256,
+      "height": 256,
+      "length": 25,
+      "batch_size": 1
+    }
+  },
+  "11": {
+    "class_type": "KSamplerAdvanced",
+    "_meta": {"title": "Sampler high noise"},
+    "inputs": {
+      "model": ["5", 0],
+      "positive": ["10", 0],
+      "negative": ["10", 1],
+      "latent_image": ["10", 2],
+      "add_noise": "enable",
+      "noise_seed": 0,
+      "steps": 4,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 0,
+      "end_at_step": 2,
+      "return_with_leftover_noise": "enable"
+    }
+  },
+  "12": {
+    "class_type": "KSamplerAdvanced",
+    "_meta": {"title": "Sampler low noise"},
+    "inputs": {
+      "model": ["6", 0],
+      "positive": ["10", 0],
+      "negative": ["10", 1],
+      "latent_image": ["11", 0],
+      "add_noise": "disable",
+      "noise_seed": 0,
+      "steps": 4,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 2,
+      "end_at_step": 4,
+      "return_with_leftover_noise": "disable"
+    }
+  },
+  "13": {
+    "class_type": "VAEDecode",
+    "_meta": {"title": "VAE Decode"},
+    "inputs": {
+      "samples": ["12", 0],
+      "vae": ["4", 0]
+    }
+  },
+  "14": {
+    "class_type": "SaveAnimatedWEBP",
+    "_meta": {"title": "Save WEBP"},
+    "inputs": {
+      "images": ["13", 0],
+      "filename_prefix": "v3wan/clip_default",
+      "fps": 8.0,
+      "lossless": false,
+      "quality": 90,
+      "method": "default"
+    }
+  }
+}
