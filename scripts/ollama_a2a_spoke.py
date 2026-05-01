@@ -53,14 +53,28 @@ def list_ollama_models(ollama_url: str) -> List[str]:
         return []
 
 
-def build_agent_card(name: str, url: str, models: List[str]) -> Dict[str, Any]:
-    """Construit l'AgentCard A2A à partir des modèles Ollama dispos."""
+def _normalize_model_id(model: str) -> str:
+    """Sanitize Ollama model name for use as a skill id (no `:`, no `/`).
+
+    `gemma4:26b-instruct` -> `gemma4-26b-instruct`.
+    """
+    return model.replace(":", "-").replace("/", "-").replace(".", "")
+
+
+def build_agent_card(name: str, url: str, models: List[str], host: str | None = None) -> Dict[str, Any]:
+    """Construit l'AgentCard A2A à partir des modèles Ollama dispos.
+
+    Convention nomenclature (proposée par Claude/MINISTAR 2026-05-02) :
+    `name = "ollama-<host>"` (e.g. "ollama-darkstar"), `skills.id` =
+    "embed-<model_id>" ou "chat-<model_id>" pour qu'un router du hub
+    puisse choisir par skill direct ou par host.
+    """
     skills = []
     for m in models:
-        # Heuristique skills selon le nom du modèle
+        mid = _normalize_model_id(m)
         if "embed" in m.lower():
             skills.append({
-                "id": f"embed-{m}",
+                "id": f"embed-{mid}",
                 "name": f"Embeddings ({m})",
                 "description": f"Génère des embeddings via Ollama {m}",
                 "inputModes": ["text/plain"],
@@ -68,17 +82,20 @@ def build_agent_card(name: str, url: str, models: List[str]) -> Dict[str, Any]:
             })
         else:
             skills.append({
-                "id": f"chat-{m}",
+                "id": f"chat-{mid}",
                 "name": f"Chat ({m})",
                 "description": f"Chat completion via Ollama {m}",
                 "inputModes": ["text/plain"],
                 "outputModes": ["text/plain"],
             })
+    description = f"Ollama spoke ({len(models)} models)"
+    if host:
+        description += f" on {host}"
     return {
         "name": name,
-        "description": f"Ollama spoke ({len(models)} models)",
+        "description": description,
         "url": url,
-        "version": "0.1.0",
+        "version": "0.2.0",
         "skills": skills,
         "capabilities": {
             "streaming": True,   # Ollama supporte le streaming natif
@@ -129,7 +146,8 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--hub", required=True, help="Hub A2A URL, ex http://100.98.18.76:3000")
     p.add_argument("--ollama", default="http://127.0.0.1:11434", help="Local Ollama URL")
-    p.add_argument("--name", required=True, help="Nom unique du spoke (ex darkstar-ollama)")
+    p.add_argument("--name", required=True, help="Nom unique du spoke (recommandé: ollama-<host>, ex ollama-darkstar)")
+    p.add_argument("--host-tag", default=None, help="Tag du host (darkstar, ministar-linux, etc.) pour skills id et description")
     p.add_argument("--url", required=True, help="URL publique du Ollama local sur le tailnet")
     p.add_argument("--models", nargs="+", default=None,
                    help="Liste explicite de modèles à annoncer (sinon auto-détecte via /api/tags)")
@@ -142,7 +160,7 @@ def main() -> None:
         sys.exit(2)
     print(f"[init] {len(models)} models annoncés : {', '.join(models)}", flush=True)
 
-    card = build_agent_card(args.name, args.url, models)
+    card = build_agent_card(args.name, args.url, models, host=args.host_tag)
     registered = register(args.hub, args.name, args.url, card)
 
     if not registered:
