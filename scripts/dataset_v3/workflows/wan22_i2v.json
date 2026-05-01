@@ -1,5 +1,4 @@
 {
-  "_comment": "Workflow Wan 2.2 i2v API minimal — DRAFT V3.1 a valider via probe au matin. Reference modeles : split_files/diffusion_models/wan2.2_i2v_{high,low}_noise_14B_fp8_scaled.safetensors + text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors + vae/wan_2.1_vae.safetensors + loras/wan2.2_i2v_lightx2v_4steps_lora_v1_{high,low}_noise.safetensors. Pattern : 2x UNets (high noise -> low noise) avec LoRA lightx2v 4-steps appliquee a chaque, 1 KSamplerAdvanced par UNET.",
   "1": {
     "class_type": "UNETLoader",
     "_meta": {"title": "Load Wan2.2 high noise"},
