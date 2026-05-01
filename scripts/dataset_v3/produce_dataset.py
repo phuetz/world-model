@@ -143,12 +143,16 @@ class Producer:
         self.sdxl_wf = _load_workflow(sdxl_workflow_path)
         self.wan_wf = _load_workflow(wan_workflow_path)
 
+        import random
         self.prompts: List[Dict[str, Any]] = []
         with open(prompts_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:
                     self.prompts.append(json.loads(line))
+        # Shuffle déterministe (seed fixe) — équilibre les classes au sein du
+        # dataset même si la production est interrompue avant la fin.
+        random.Random(42).shuffle(self.prompts)
         self.progress_path = out_root / "progress.jsonl"
         self.lock = threading.Lock()
         self.done_ids: set[str] = self._load_done()

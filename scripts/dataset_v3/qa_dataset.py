@@ -69,24 +69,46 @@ def main() -> None:
     flow_means: dict[str, list[float]] = defaultdict(list)
     flow_p99: dict[str, list[float]] = defaultdict(list)
     deg_clips: list[str] = []
+    deg_reasons: dict[str, str] = {}
     for clip in clips:
         meta = load_meta(clip)
         cls = meta.get("class") or clip.parent.name
         try:
             flow = np.load(clip / "action_proxy.npy")
         except Exception:
+            deg_clips.append(clip.name); deg_reasons[clip.name] = "action_proxy.npy unreadable"
             continue
         if flow.size == 0:
-            deg_clips.append(clip.name)
+            deg_clips.append(clip.name); deg_reasons[clip.name] = "action_proxy empty"
             continue
         mag = np.sqrt(flow[:, 0] ** 2 + flow[:, 1] ** 2)
         m = float(mag.mean())
         p99 = float(np.percentile(mag, 99))
         flow_means[cls].append(m)
         flow_p99[cls].append(p99)
-        # Critères de dégénérescence : flow magnitude p99 < 0.05 (presque immobile)
+        # Critères de dégénérescence
+        # 1) flow magnitude p99 < 0.05 → caméra fixe + objet immobile
         if p99 < 0.05:
-            deg_clips.append(clip.name)
+            deg_clips.append(clip.name); deg_reasons[clip.name] = f"flow p99 {p99:.3f} < 0.05"
+            continue
+        # 2) frame count != attendu (clip tronqué)
+        frames = sorted(clip.glob("frame_*.jpg"))
+        n_frames = len(frames)
+        expected = meta.get("n_frames", 0)
+        if expected and n_frames < int(0.9 * expected):
+            deg_clips.append(clip.name); deg_reasons[clip.name] = f"only {n_frames}/{expected} frames"
+            continue
+        # 3) Frames quasi-identiques : pixel variance entre frame 0 et frame mid
+        if n_frames >= 3:
+            try:
+                arr0 = np.asarray(Image.open(frames[0]).convert("RGB"), dtype=np.float32)
+                arrM = np.asarray(Image.open(frames[len(frames) // 2]).convert("RGB"), dtype=np.float32)
+                pixel_diff = float(np.abs(arr0 - arrM).mean())
+                if pixel_diff < 1.5:  # JPEG q=90 -> bruit ~0.5-1, real motion >> 5
+                    deg_clips.append(clip.name); deg_reasons[clip.name] = f"frames identiques (mean diff {pixel_diff:.2f})"
+                    continue
+            except Exception:
+                pass
 
     stats = {
         "total_clips": len(clips),
@@ -105,7 +127,8 @@ def main() -> None:
         json.dump(stats, f, indent=2)
     with open(qa_dir / "blacklist.txt", "w", encoding="utf-8") as f:
         for c in deg_clips:
-            f.write(c + "\n")
+            reason = deg_reasons.get(c, "?")
+            f.write(f"{c}  # {reason}\n")
 
     build_contact_sheet(clips, qa_dir / "contact_sheet.png", n_clips=6, size=192)
     print(f"stats: {qa_dir/'stats.json'}", flush=True)
