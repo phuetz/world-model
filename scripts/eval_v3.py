@@ -24,7 +24,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from world_model.config.config import WorldModelConfig  # noqa: E402
 from world_model.data.video_dataset import (  # noqa: E402
-    VideoSequenceWindowDataset, _scan_clips, split_clips,
+    VideoClipDataset, split_clips,
 )
 from world_model.models.world_model import WorldModel  # noqa: E402
 
@@ -61,7 +61,7 @@ def load_model(cfg: WorldModelConfig, ckpt_path: str, device: torch.device) -> W
 
 def horizon_mse(
     model: WorldModel,
-    val_set: VideoSequenceWindowDataset,
+    val_set: VideoClipDataset,
     horizon: int,
     device: torch.device,
     batch_size: int,
@@ -95,7 +95,7 @@ def horizon_mse(
 
 def collect_latents(
     model: WorldModel,
-    val_set: VideoSequenceWindowDataset,
+    val_set: VideoClipDataset,
     device: torch.device,
     batch_size: int,
     max_samples: int,
@@ -188,8 +188,6 @@ def main() -> None:
     model = load_model(cfg, args.checkpoint, device)
 
     train_ids, val_ids = split_clips(args.data, val_ratio=0.05, seed=args.seed)
-    val_set = VideoSequenceWindowDataset = None
-    from world_model.data.video_dataset import VideoClipDataset
     val_set = VideoClipDataset(cfg, args.data, seq_len=cfg.seq_len, stride=2, clip_ids=val_ids)
     print(f"[eval_v3] val_clips={val_set.n_clips} val_windows={len(val_set)} horizons={horizons}", flush=True)
 
@@ -212,7 +210,7 @@ def main() -> None:
         latent_dim=cfg.latent_dim,
     )
     Path(args.report).write_text(report, encoding="utf-8")
-    print("\n" + report)
+    print(f"\nrapport ecrit dans : {args.report}")
 
 
 if __name__ == "__main__":
