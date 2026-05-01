@@ -163,7 +163,7 @@ def make_video_dataloader(
     cfg: WorldModelConfig,
     root: str | Path,
     seq_len: int | None = None,
-    stride: int = 4,
+    stride: int = 2,
     split: str = "train",
     val_ratio: float = 0.05,
     seed: int = 0,

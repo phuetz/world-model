@@ -46,10 +46,25 @@ NAV_LOCATIONS = [
     "an empty open-plan living room",
     "a quiet office aisle with desks on both sides",
     "a clean stairwell with morning light",
+    "a tiled bathroom passage",
+    "a softly lit library aisle",
+    "an empty supermarket aisle",
+    "a wood-floored loft passage",
+    "a museum corridor with paintings",
+    "a hotel hallway with carpeted floor",
+    "a basement passage with bare bulbs",
+    "an art studio walkway with easels",
 ]
 NAV_MOTIONS = [
     "smooth slow forward dolly", "gentle handheld walking pace",
     "steady forward steady-cam", "subtle forward drift",
+    "smooth gimbal forward glide", "low-angle slow approach",
+    "ceiling-high tracking dolly", "POV walking pace",
+]
+NAV_LIGHTS = [
+    "morning light", "soft afternoon light", "warm tungsten lighting",
+    "cool fluorescent overhead light", "dappled window light",
+    "blue hour ambient glow",
 ]
 
 OUTDOOR_SCENES = [
@@ -59,11 +74,24 @@ OUTDOOR_SCENES = [
     "a small canal path with slow water",
     "a tree-lined boulevard with light traffic",
     "a community garden with gentle breeze",
+    "a small bridge over a stream",
+    "a beach boardwalk in soft light",
+    "a quiet alley with brick walls",
+    "a town square with a fountain",
+    "a riverside walking path",
+    "a quiet farmer's market street",
 ]
 OUTDOOR_SUBJECTS = [
     "one pedestrian walking by", "a slow cyclist passing",
     "leaves drifting in the wind", "a stray cat strolling",
     "a runner at moderate pace", "a child kicking a ball gently",
+    "a couple walking hand in hand", "a man with a dog on leash",
+    "a delivery worker pushing a cart", "a bird flying low",
+    "an elderly person with a cane", "a jogger going past",
+]
+OUTDOOR_TIMES = [
+    "morning soft light", "midday neutral light", "late afternoon golden hour",
+    "overcast diffuse light", "blue hour", "dawn",
 ]
 
 GESTURE_ACTIONS = [
@@ -71,10 +99,21 @@ GESTURE_ACTIONS = [
     "two hands clapping softly", "a hand opening an interior door",
     "a hand turning a light switch", "fingers typing on a laptop keyboard",
     "a hand holding a steaming mug", "a hand offering a small object",
+    "a hand giving a thumbs up", "a hand picking up a phone",
+    "fingers snapping softly", "a hand placing keys on a counter",
+    "a hand turning a page of a book", "a hand stirring a cup with a spoon",
+    "a hand pouring water into a glass", "a hand reaching toward a door handle",
 ]
 GESTURE_BACKGROUNDS = [
     "a neutral beige background", "a softly blurred living room",
     "a clean white wall", "a warm wood-paneled wall",
+    "a soft grey studio backdrop", "a kitchen counter with bokeh",
+    "a deep blue background", "a sunlit window background",
+    "a brick wall", "a softly blurred bookshelf",
+]
+GESTURE_LIGHTS = [
+    "soft window light", "warm tungsten light",
+    "diffuse daylight", "moody side light",
 ]
 
 STYLE_TAIL = (
@@ -101,13 +140,14 @@ def _build_indoor(rng: random.Random) -> tuple[str, str]:
 def _build_nav(rng: random.Random) -> tuple[str, str]:
     loc = rng.choice(NAV_LOCATIONS)
     motion = rng.choice(NAV_MOTIONS)
+    light = rng.choice(NAV_LIGHTS)
     prompt = (
         f"first person POV, {motion}, walking through {loc}, "
-        f"natural ambient light, no other people in frame, {STYLE_TAIL}"
+        f"{light}, no other people in frame, {STYLE_TAIL}"
     )
     src = (
         f"first person view photo entering {loc}, "
-        f"warm ambient lighting, photorealistic, no people"
+        f"{light}, photorealistic, no people"
     )
     return prompt, src
 
@@ -115,12 +155,13 @@ def _build_nav(rng: random.Random) -> tuple[str, str]:
 def _build_outdoor(rng: random.Random) -> tuple[str, str]:
     scene = rng.choice(OUTDOOR_SCENES)
     subj = rng.choice(OUTDOOR_SUBJECTS)
+    time = rng.choice(OUTDOOR_TIMES)
     prompt = (
-        f"static camera tripod shot of {scene}, {subj}, "
+        f"static camera tripod shot of {scene}, {subj}, {time}, "
         f"{STYLE_TAIL}"
     )
     src = (
-        f"daylight photo of {scene}, photorealistic, calm composition, "
+        f"photo of {scene} in {time}, photorealistic, calm composition, "
         f"single focal subject"
     )
     return prompt, src
@@ -129,13 +170,14 @@ def _build_outdoor(rng: random.Random) -> tuple[str, str]:
 def _build_gesture(rng: random.Random) -> tuple[str, str]:
     action = rng.choice(GESTURE_ACTIONS)
     bg = rng.choice(GESTURE_BACKGROUNDS)
+    light = rng.choice(GESTURE_LIGHTS)
     prompt = (
-        f"close-up of {action}, on {bg}, "
+        f"close-up of {action}, on {bg}, {light}, "
         f"smooth natural motion, {STYLE_TAIL}"
     )
     src = (
         f"close-up still photo of a hand resting before performing the action, "
-        f"on {bg}, photorealistic, soft natural light"
+        f"on {bg}, {light}, photorealistic"
     )
     return prompt, src
 

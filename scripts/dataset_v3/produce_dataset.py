@@ -30,6 +30,7 @@ from PIL import Image
 
 from comfy_client import ComfyClient
 from optical_flow import compute_clip_flow
+from stock_image import make_for_class
 
 
 # --- Workflow loading & patching -------------------------------------------
@@ -176,7 +177,8 @@ class Producer:
                 f.write(json.dumps(obj) + "\n")
 
     def _check_disk(self) -> bool:
-        free_gb = psutil.disk_usage(str(self.out_root.anchor)).free / (1024 ** 3)
+        anchor = self.out_root.resolve().anchor or os.getcwd()
+        free_gb = psutil.disk_usage(str(anchor)).free / (1024 ** 3)
         return free_gb >= self.min_disk_gb
 
     def _process_one(self, client: ComfyClient, item: Dict[str, Any]) -> Dict[str, Any]:
@@ -187,32 +189,19 @@ class Producer:
         clip_dir.mkdir(parents=True, exist_ok=True)
 
         t0 = time.time()
-        # ---- 1) SDXL source image ------------------------------------------
-        sdxl_wf = patch_sdxl(self.sdxl_wf, item["source_image_prompt"], seed, f"v3src/{clip_id}")
-        prompt_id = client.submit(sdxl_wf)
-        outputs = client.wait(prompt_id, timeout=180.0)
-        images = client.collect_images(outputs)
-        if not images:
-            raise RuntimeError(f"sdxl produced 0 images for {clip_id}")
-        src_filename, src_bytes = images[0]
-        # Save source.png
-        with Image.open(io.BytesIO(src_bytes)) as im:
-            if im.size != (self.size, self.size):
-                im = im.convert("RGB").resize((self.size, self.size), Image.BILINEAR)
-            im.save(clip_dir / "source.png")
-        # Aussi push l'image dans comfy input/ pour LoadImage
+        # ---- 1) Source image (procedural stock — pas de SDXL nécessaire) ---
+        src_img = make_for_class(cls, seed, self.size)
+        src_img.save(clip_dir / "source.png")
         input_filename = f"v3src_{clip_id}.png"
         input_path = self.comfy_input_dir / input_filename
-        with Image.open(io.BytesIO(src_bytes)) as im:
-            if im.size != (self.size, self.size):
-                im = im.convert("RGB").resize((self.size, self.size), Image.BILINEAR)
-            im.save(input_path)
+        src_img.save(input_path)
 
-        # ---- 2) Wan 2.2 i2v ------------------------------------------------
-        wan_wf = patch_wan_i2v(
-            self.wan_wf, item["prompt"], input_filename, seed,
-            f"v3wan/{clip_id}", width=self.size, height=self.size,
-            length=self.clip_length + 1,  # Wan veut souvent (n*4)+1
+        # ---- 2) SVD-XT i2v -------------------------------------------------
+        from probe_svd import patch_svd
+        wan_wf = patch_svd(
+            self.wan_wf, image_filename=input_filename,
+            seed=seed, out_filename=f"v3svd/{clip_id}",
+            width=self.size, height=self.size, frames=self.clip_length,
         )
         prompt_id = client.submit(wan_wf)
         outputs = client.wait(prompt_id, timeout=900.0)
@@ -363,7 +352,7 @@ def main() -> None:
     p.add_argument("--out", required=True)
     p.add_argument("--target", type=int, default=1500)
     p.add_argument("--sdxl-workflow", default="scripts/dataset_v3/workflows/sdxl_image.json")
-    p.add_argument("--wan-workflow", default="scripts/dataset_v3/workflows/wan22_i2v.json")
+    p.add_argument("--wan-workflow", default="scripts/dataset_v3/workflows/svd_i2v.json")
     p.add_argument("--comfy-input", default="D:/DEV/ComfyUI/input")
     p.add_argument("--min-disk-gb", type=float, default=50.0)
     p.add_argument("--clip-length", type=int, default=120)
