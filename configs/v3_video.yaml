@@ -1,0 +1,28 @@
+# V3 — world-model JEPA sur dataset vidéo Wan 2.2 (256×256, T=16)
+# Config nuit DARKSTAR 2026-05-01 — voir ~/.claude/plans/generic-snuggling-scott.md
+
+obs_shape: [3, 256, 256]
+action_dim: 4
+latent_dim: 512
+
+# Architecture V3
+encoder_type: conv5         # 5 convs stride-2 → 8x8 feature map
+dynamics_type: transformer  # causal pre-norm 4×8×512
+hidden_dim: 512
+seq_len: 16
+
+# Entraînement
+learning_rate: 0.0003
+batch_size: 24
+max_epochs: 50
+rollout_warmup_epochs: 5    # 5 epochs en 1-step avant rollout T=16
+use_amp: true                # bf16 sur Ampere/Hopper
+
+# VICReg — augmenté (V2 default 0.04 trop faible, eval rank V1.8 = 8%)
+lambda_var: 0.15
+lambda_cov: 0.04
+lambda_mean: 0.01
+
+# Pas de signal reward/done sur dataset vidéo passif
+use_reward_head: false
+use_done_head: false

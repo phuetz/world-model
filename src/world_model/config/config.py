@@ -13,13 +13,17 @@ class WorldModelConfig:
     latent_dim: int = 256
 
     # Architecture
-    encoder_type: str = "conv"   # "conv" | "vit"
+    encoder_type: str = "conv"        # "conv" (V2 4-stride 64x64) | "conv5" (V3 5-stride 256x256) | "vit"
+    dynamics_type: str = "mlp"        # "mlp" (V1/V2) | "transformer" (V3 causal pre-norm)
     hidden_dim: int = 512
+    seq_len: int = 16                 # T pour le transformer dynamique (V3)
 
     # Entraînement
     learning_rate: float = 3e-4
     batch_size: int = 64
     max_epochs: int = 100
+    rollout_warmup_epochs: int = 0    # epochs en 1-step avant rollout T-step (V3)
+    use_amp: bool = False             # bf16 mixed precision (V3 sur Ampere/Hopper)
 
     # Régularisation isotrope
     lambda_var: float = 0.04

@@ -1,0 +1,66 @@
+{
+  "3": {
+    "class_type": "KSampler",
+    "_meta": {"title": "KSampler"},
+    "inputs": {
+      "seed": 0,
+      "steps": 20,
+      "cfg": 5.0,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 1.0,
+      "model": ["4", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["5", 0]
+    }
+  },
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {"title": "Load Checkpoint"},
+    "inputs": {
+      "ckpt_name": "Juggernaut-XL-v9.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "_meta": {"title": "Empty Latent"},
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Positive prompt"},
+    "inputs": {
+      "text": "a placeholder positive prompt to be patched",
+      "clip": ["4", 1]
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Negative prompt"},
+    "inputs": {
+      "text": "low quality, blurry, watermark, text, deformed",
+      "clip": ["4", 1]
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "_meta": {"title": "VAE Decode"},
+    "inputs": {
+      "samples": ["3", 0],
+      "vae": ["4", 2]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "_meta": {"title": "Save Image"},
+    "inputs": {
+      "filename_prefix": "v3src/clip_default",
+      "images": ["8", 0]
+    }
+  }
+}

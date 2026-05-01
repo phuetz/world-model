@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 checkpoints/
+checkpoints_*/
 runs/
 *.pt
 *.pth
@@ -11,3 +12,10 @@ venv/
 dist/
 build/
 *.egg-info/
+
+# V3 artifacts (root-level data/ et scratch dir, pas src/world_model/data/)
+/data/
+.claude/
+scripts/dataset_v3/prompts.jsonl
+*.npy
+

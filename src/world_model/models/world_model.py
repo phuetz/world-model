@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Dict
 import torch
 import torch.nn as nn
-from .encoder import ObservationEncoder, ActionEncoder
-from .dynamics import LatentDynamicsModel
+from .encoder import ActionEncoder, build_observation_encoder
+from .dynamics import LatentDynamicsTransformer, build_dynamics
 from .regularizer import IsotropicLatentRegularizer
 from ..config.config import WorldModelConfig
 
@@ -24,9 +24,9 @@ class WorldModel(nn.Module):
     def __init__(self, cfg: WorldModelConfig) -> None:
         super().__init__()
         self.cfg = cfg
-        self.obs_encoder   = ObservationEncoder(cfg)
+        self.obs_encoder   = build_observation_encoder(cfg)
         self.action_encoder = ActionEncoder(cfg)
-        self.dynamics      = LatentDynamicsModel(cfg)
+        self.dynamics      = build_dynamics(cfg)
         self.regularizer   = IsotropicLatentRegularizer(cfg)
 
     def forward_step(
