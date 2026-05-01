@@ -12,11 +12,11 @@ hidden_dim: 512
 seq_len: 16
 
 # Entraînement
-learning_rate: 0.0003
+learning_rate: 0.0001        # baisse 3e-4 -> 1e-4 apres run V3.0 NaN epoch 6 (rollout T=16 + bf16 + grad explode)
 batch_size: 24
-max_epochs: 50
-rollout_warmup_epochs: 5    # 5 epochs en 1-step avant rollout T=16
-use_amp: true                # bf16 sur Ampere/Hopper
+max_epochs: 30               # suffisant, pas besoin de 50 (partial 10 epochs convergeait deja)
+rollout_warmup_epochs: 10    # warmup plus long (10 epochs en 1-step) pour stabiliser avant T=16
+use_amp: false               # fp32 stable, bf16 a fait diverger en epoch 6 sur 1500 clips
 
 # VICReg — augmenté (V2 default 0.04 trop faible, eval rank V1.8 = 8%)
 lambda_var: 0.15
