@@ -104,12 +104,38 @@ def build_agent_card(name: str, url: str, models: List[str], host: str | None = 
     }
 
 
-def register(hub_url: str, name: str, url: str, card: Dict[str, Any]) -> bool:
-    """POST au hub /api/a2a/agents/register."""
+_session = requests.Session()
+_csrf_token: str | None = None
+
+
+def _get_csrf(hub_url: str) -> str | None:
+    """Fetch a CSRF token via GET /api/csrf-token (Double Submit Cookie pattern).
+
+    Code Buddy server applies CSRF middleware even in --no-auth mode. Token must
+    accompany POST requests in header X-CSRF-Token (and as cookie, but session
+    handles that).
+    """
+    global _csrf_token
     try:
-        r = requests.post(
+        r = _session.get(f"{hub_url}/api/csrf-token", timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            _csrf_token = data.get("token") or data.get("csrfToken")
+            return _csrf_token
+    except requests.exceptions.RequestException:
+        pass
+    return None
+
+
+def register(hub_url: str, name: str, url: str, card: Dict[str, Any]) -> bool:
+    """POST au hub /api/a2a/agents/register avec CSRF token."""
+    token = _get_csrf(hub_url)
+    headers = {"X-CSRF-Token": token} if token else {}
+    try:
+        r = _session.post(
             f"{hub_url}/api/a2a/agents/register",
             json={"name": name, "url": url, "card": card},
+            headers=headers,
             timeout=10,
         )
         if r.status_code == 200:
@@ -130,11 +156,14 @@ def register(hub_url: str, name: str, url: str, card: Dict[str, Any]) -> bool:
 
 
 def heartbeat(hub_url: str, name: str) -> bool:
-    """POST au hub /api/a2a/agents/:name/heartbeat."""
+    """POST au hub /api/a2a/agents/:name/heartbeat avec CSRF."""
+    token = _csrf_token or _get_csrf(hub_url)
+    headers = {"X-CSRF-Token": token} if token else {}
     try:
-        r = requests.post(
+        r = _session.post(
             f"{hub_url}/api/a2a/agents/{name}/heartbeat",
             json={},
+            headers=headers,
             timeout=5,
         )
         return r.status_code == 200
