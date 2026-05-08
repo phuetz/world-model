@@ -1,0 +1,30 @@
+# V4.1 — V4 + lambda_var=0.15 (au lieu de 0.04)
+# Hypothèse V4.1 : le rank collapse de V4 (0.9%) vient de lambda_var trop
+# faible pour un Transformer dynamique 4×8×512. V3 (lambda 0.15) tenait
+# le meilleur compromis MSE/rank parmi V3.x. Test : V3 setting sur env
+# Gymnasium (=combo "actions vraies + reg plus forte").
+
+obs_shape: [3, 64, 64]
+action_dim: 4
+latent_dim: 256
+
+# Architecture identique V4
+encoder_type: conv          # Conv4 (V1/V2)
+dynamics_type: transformer  # 4×8×512 (V3)
+hidden_dim: 512
+seq_len: 16
+
+# Entraînement V3-stable (cf. V4 run #1 qui a divergé en lr 1e-4)
+learning_rate: 0.00005      # 5e-5
+batch_size: 32
+max_epochs: 30
+rollout_warmup_epochs: 10
+use_amp: false
+
+# VICReg — V3 setting (au lieu de V1.8 setting V4)
+lambda_var: 0.15            # CHANGEMENT vs V4 (0.04 → 0.15)
+lambda_cov: 0.04
+lambda_mean: 0.01
+
+use_reward_head: false
+use_done_head: false
