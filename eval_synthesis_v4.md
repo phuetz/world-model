@@ -61,7 +61,8 @@ et augmente la distance. CEM = inutilisable pour planning.
 | V3.1 | Wan 2.2 i2v 300 | Conv5 | Transformer | 0.15 | 0.04 | 23.8M | 0.0020 | ×1.84 | 0.020 | 1.4/512 (0.3 %) |
 | V4 | LunarLanderContinuous | Conv4 | Transformer | 0.04 | 0.04 | 5.2M | 0.000233 | ×2.17 | 0.015 | 2.4/256 (0.9 %) |
 | V4.1 | LunarLanderContinuous | Conv4 | Transformer | **0.15** | 0.04 | 5.2M | 0.000695 | ×1.12 | 0.036 | 2.3/256 (0.9 %) |
-| **V4.2** | LunarLanderContinuous | Conv4 | Transformer | 0.15 | **0.15** | 5.2M | **0.000731** | **×1.24** | **0.016** | **2.1/256 (0.8 %)** |
+| V4.2 | LunarLanderContinuous | Conv4 | Transformer | 0.15 | **0.15** | 5.2M | 0.000731 | ×1.24 | 0.016 | 2.1/256 (0.8 %) |
+| **V4.3** | LunarLanderContinuous **random** | Conv4 | Transformer | 0.15 | 0.15 | 5.2M | 0.00262 | ×1.67 | **0.030** | **2.4/256 (1.0 %)** |
 
 ## Lecture
 
@@ -123,35 +124,57 @@ Hypothèses restantes (par ordre de probabilité) :
 
 1. **Diversité dataset insuffisante** : 100 ep × heuristic policy déterministe
    → trajectoires très similaires, occupent un sous-espace minuscule de
-   l'espace LunarLander. Le modèle peut tout fitter avec ~2 dims latentes
-   parce que c'est la dimension intrinsèque réelle du dataset.
-2. **Frames RGB quasi-statiques** : LunarLander rendu à 64×64 a très peu
-   de pixels qui changent entre frames adjacentes (fond noir + petit
-   lander mobile). VICReg sur features Conv4 d'images quasi-identiques
-   ne peut pas générer plus de diversité que le signal d'entrée n'en a.
+   l'espace LunarLander.
+2. **Frames RGB quasi-statiques** : LunarLander 64×64 a très peu de pixels
+   qui changent entre frames adjacentes.
 3. **Capacité Transformer 4×8×512 trop élevée** pour 5k windows de
    training. Surfit à 2 dims, ignore les 254 autres.
 
-Tests proposés (par ordre de coût croissant) :
-- **V4.3 : random policy** au lieu de heuristic (changement 1 ligne, même temps)
-- **V4.4 : plus d'épisodes** (500 ep × 300 steps = ×10 transitions, ×3 temps)
-- **V4.5 : encoder/dynamics réduits** (latent_dim 64, 1 layer Transformer)
-  → forcer densité d'utilisation
-- **CarRacing-v3** : env action 3D + observation 96×96 plus riche
+### Diagnostic V4.3 — random policy aussi rejetée
+
+V4.3 = V4.2 + `--policy random`. Résultat :
+- Variance moyenne ×2 (0.016 → 0.030) — random diversifie bien les observations ✓
+- Compounding monte un peu (×1.24 → ×1.67) — random = moins prédictible
+- **Rank = 2.43/256 (0.95 %)** — toujours dans le plateau ~1 %
+
+**Hypothèse "diversité de policy est le verrou" REJETÉE.** Random policy
+augmente bien la variance des observations mais le rank effectif reste
+identique. Ce n'est pas un manque de diversité de trajectoires.
+
+**Bilan 4 expériences V4.x : rank cloué à 0.8-1.0 %, indépendamment de
+λ_var, λ_cov, ou policy.** Les hypothèses 1 et restantes sont :
+
+- **Hypothèse 2 (frames quasi-statiques)** : à tester en passant à 96×96
+  ou 128×128 (peut nécessiter Conv5 + obs_shape adapté).
+- **Hypothèse 3 (Transformer trop expressif)** : à tester en réduisant la
+  capacité (1 layer, latent_dim 64) — le Transformer surfit sur 2 dims
+  parce qu'il en a la capacité.
+- **Hypothèse 4 (test discriminant)** : V4.4 = MLP V1.8 sur LunarLander.
+  Si MLP donne rank ≥ 8 % (comme V1.8 sur CarRacing), c'est bien le
+  Transformer V3 qui collapse. Si MLP donne aussi ~1 %, le verrou est
+  dans le combo dataset/Conv4/64×64.
+
+Tests proposés (par ordre de coût croissant et de discrimination) :
+- **V4.4 : MLP V1.8 archi sur LunarLander** (changement `dynamics_type: mlp`,
+  même temps, **test le plus discriminant**)
+- **V4.5 : 1 layer Transformer + latent_dim 64** (force densité)
+- **V4.6 : obs 128×128 + Conv5** (test hypothèse frames pauvres)
+- **V4.7 : 500 ep × 300 steps** (volume données)
+- **CarRacing-v3 + V4 archi** (env actions 3D plus riche)
 
 ## Recommandations
 
 ### Court terme (à tester en priorité)
 
 1. ~~**V4.1 — λ_var=0.15**~~ ✅ fait, rank inchangé (0.9 %).
-2. ~~**V4.2 — λ_cov=0.15**~~ ✅ fait, rank inchangé (0.8 %). VICReg n'est
-   PAS le levier sur ce setup.
-3. **V4.3 — random policy** au lieu de heuristic. Coût quasi nul, peut
-   débloquer si la diversité de trajectoires était le verrou.
-4. **V4.4 — 500 ep × 300 steps** (×10 data). Temps ×3 environ.
-5. **V4.5 — latent_dim 64 + 1 layer Transformer**. Force la densité.
-6. **Re-test V1.8 archi (MLP) sur LunarLander** : si MLP donne rank ≥ 8 %
-   sur LunarLander aussi, on confirme que c'est le Transformer qui collapse.
+2. ~~**V4.2 — λ_cov=0.15**~~ ✅ fait, rank inchangé (0.8 %). VICReg pas le levier.
+3. ~~**V4.3 — random policy**~~ ✅ fait, rank inchangé (1.0 %). Policy pas le levier.
+4. **V4.4 — MLP V1.8 archi sur LunarLander** : **TEST DISCRIMINANT**. Si MLP
+   donne rank ≥ 8 % → Transformer V3 est le problème. Si MLP donne ~1 % →
+   le verrou est ailleurs (dataset, observation 64×64, Conv4).
+5. **V4.5 — 1 layer Transformer + latent_dim 64** (force densité d'usage).
+6. **V4.6 — obs 128×128 + Conv5** (test frames pauvres).
+7. **V4.7 — 500 ep × 300 steps** (volume données).
 
 ### Moyen terme
 
@@ -177,6 +200,9 @@ Tests proposés (par ordre de coût croissant) :
   `plan_report_v4_1_lambda15.md`
 - V4.2 : `configs/v4_2_lambdacov15.yaml`, `eval_report_v4_2_lambdacov15.md`,
   `plan_report_v4_2_lambdacov15.md`
-- Cette synthèse (mise à jour avec V4.2)
+- V4.3 (random policy) : `eval_report_v4_3_randompolicy.md`,
+  `plan_report_v4_3_randompolicy.md` (réutilise config V4.2, juste
+  `--policy random` au lieu de `heuristic`)
+- Cette synthèse (mise à jour avec V4.3)
 
 — Claude / DARKSTAR, 2026-05-08
