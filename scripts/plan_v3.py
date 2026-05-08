@@ -29,6 +29,9 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from world_model.config.config import WorldModelConfig  # noqa: E402
 from world_model.data.video_dataset import VideoClipDataset, split_clips  # noqa: E402
+from world_model.data.gym_video_dataset import (  # noqa: E402
+    GymVideoDataset, split_episodes,
+)
 from world_model.models.world_model import WorldModel  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT))
@@ -39,7 +42,12 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--config", default="configs/v3_video.yaml")
-    p.add_argument("--data", default="data/v3_video")
+    p.add_argument("--backend", default="video", choices=["video", "gym"])
+    p.add_argument("--data", default="data/v3_video", help="root dataset (backend=video)")
+    p.add_argument("--env", default="LunarLanderContinuous-v3")
+    p.add_argument("--n-episodes", type=int, default=100)
+    p.add_argument("--max-episode-len", type=int, default=200)
+    p.add_argument("--policy", default="heuristic", choices=["random", "heuristic"])
     p.add_argument("--n-pairs", type=int, default=100)
     p.add_argument("--horizon", type=int, default=8, help="T (au plus seq_len) — horizon du rollout cible")
     p.add_argument("--cem-iters", type=int, default=4)
@@ -48,6 +56,43 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--report", default="plan_report_v3.md")
     return p.parse_args()
+
+
+def build_val_set(args: argparse.Namespace, cfg: WorldModelConfig):
+    if args.backend == "video":
+        _, val_ids = split_clips(args.data, val_ratio=0.05, seed=args.seed)
+        return VideoClipDataset(cfg, args.data, seq_len=cfg.seq_len, stride=2, clip_ids=val_ids)
+    full = GymVideoDataset(
+        cfg, env_id=args.env, n_episodes=args.n_episodes,
+        max_episode_len=args.max_episode_len, policy=args.policy,
+        seed=args.seed, stride=2,
+    )
+    _, val_ids = split_episodes(full.n_clips, val_ratio=0.1, seed=args.seed)
+    keep = set(val_ids)
+
+    class _Subset:
+        def __init__(self, base: GymVideoDataset, windows):
+            self.base = base
+            self.windows = windows
+            self.n_clips = base.n_clips
+        def __len__(self):
+            return len(self.windows)
+        def __getitem__(self, idx):
+            ei, start = self.windows[idx]
+            base_ep = self.base.episodes[ei]
+            T = self.base.seq_len
+            obs_seq = torch.empty(T + 1, 3, self.base.target_h, self.base.target_w)
+            from world_model.data.gym_video_dataset import _frame_to_tensor
+            for k in range(T + 1):
+                obs_seq[k] = _frame_to_tensor(base_ep["frames"][start + k],
+                                              self.base.target_h, self.base.target_w)
+            action_seq = torch.from_numpy(base_ep["actions"][start : start + T].astype("float32"))
+            reward_seq = torch.zeros(T)
+            done_seq = torch.from_numpy(base_ep["dones"][start : start + T].astype("float32"))
+            return obs_seq, action_seq, reward_seq, done_seq
+
+    filtered = [(ei, s) for (ei, s) in full.windows if ei in keep]
+    return _Subset(full, filtered)
 
 
 def load_model(cfg: WorldModelConfig, ckpt_path: str, device: torch.device) -> WorldModel:
@@ -122,15 +167,15 @@ def main() -> None:
     cfg = WorldModelConfig.from_yaml(args.config)
     model = load_model(cfg, args.checkpoint, device)
 
-    _, val_ids = split_clips(args.data, val_ratio=0.05, seed=args.seed)
-    val_set = VideoClipDataset(cfg, args.data, seq_len=cfg.seq_len, stride=2, clip_ids=val_ids)
+    val_set = build_val_set(args, cfg)
+    src_label = args.data if args.backend == "video" else f"{args.env} ({args.policy}, {args.n_episodes} ep)"
 
     if args.horizon > cfg.seq_len:
         raise ValueError(f"horizon {args.horizon} > seq_len {cfg.seq_len}")
 
     H = args.horizon
     n_pairs = min(args.n_pairs, len(val_set))
-    print(f"[plan_v3] val_windows={len(val_set)} n_pairs={n_pairs} H={H}", flush=True)
+    print(f"[plan_v3] backend={args.backend} val_windows={len(val_set)} n_pairs={n_pairs} H={H}", flush=True)
 
     rng = torch.Generator(device="cpu").manual_seed(args.seed)
     indices = torch.randperm(len(val_set), generator=rng)[:n_pairs].tolist()
@@ -165,7 +210,7 @@ def main() -> None:
         "",
         f"- Checkpoint: `{args.checkpoint}`",
         f"- Config: `{args.config}`",
-        f"- Dataset: `{args.data}`",
+        f"- Dataset: `{src_label}`",
         f"- Device: `{device}`",
         f"- Date: `{datetime.now().isoformat(timespec='seconds')}`",
         "",

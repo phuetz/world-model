@@ -26,6 +26,9 @@ from world_model.config.config import WorldModelConfig  # noqa: E402
 from world_model.data.video_dataset import (  # noqa: E402
     VideoClipDataset, split_clips,
 )
+from world_model.data.gym_video_dataset import (  # noqa: E402
+    GymVideoDataset, split_episodes,
+)
 from world_model.models.world_model import WorldModel  # noqa: E402
 
 # Réutilise les helpers existants
@@ -39,13 +42,60 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--config", default="configs/v3_video.yaml")
-    p.add_argument("--data", default="data/v3_video")
+    p.add_argument("--backend", default="video", choices=["video", "gym"],
+                   help="video = VideoClipDataset (V3), gym = GymVideoDataset (V4)")
+    p.add_argument("--data", default="data/v3_video", help="root dataset (backend=video)")
+    # backend=gym
+    p.add_argument("--env", default="LunarLanderContinuous-v3")
+    p.add_argument("--n-episodes", type=int, default=100)
+    p.add_argument("--max-episode-len", type=int, default=200)
+    p.add_argument("--policy", default="heuristic", choices=["random", "heuristic"])
     p.add_argument("--horizons", default="1,2,4,8,16")
     p.add_argument("--max-windows", type=int, default=2000, help="cap pour eval rapide")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--report", default="eval_report_v3_video.md")
     p.add_argument("--batch-size", type=int, default=8)
     return p.parse_args()
+
+
+def build_val_set(args: argparse.Namespace, cfg: WorldModelConfig):
+    """Construit le val set selon backend. Retourne un Dataset compatible :
+    val_set[i] -> (obs_seq, action_seq, reward_seq, done_seq), len(val_set), val_set.n_clips."""
+    if args.backend == "video":
+        train_ids, val_ids = split_clips(args.data, val_ratio=0.05, seed=args.seed)
+        return VideoClipDataset(cfg, args.data, seq_len=cfg.seq_len, stride=2, clip_ids=val_ids)
+    # gym
+    full = GymVideoDataset(
+        cfg, env_id=args.env, n_episodes=args.n_episodes,
+        max_episode_len=args.max_episode_len, policy=args.policy,
+        seed=args.seed, stride=2,
+    )
+    train_ids, val_ids = split_episodes(full.n_clips, val_ratio=0.1, seed=args.seed)
+    keep = set(val_ids)
+
+    class _Subset:
+        def __init__(self, base: GymVideoDataset, windows):
+            self.base = base
+            self.windows = windows
+            self.n_clips = base.n_clips
+        def __len__(self):
+            return len(self.windows)
+        def __getitem__(self, idx):
+            ei, start = self.windows[idx]
+            base_ep = self.base.episodes[ei]
+            T = self.base.seq_len
+            obs_seq = torch.empty(T + 1, 3, self.base.target_h, self.base.target_w)
+            from world_model.data.gym_video_dataset import _frame_to_tensor
+            for k in range(T + 1):
+                obs_seq[k] = _frame_to_tensor(base_ep["frames"][start + k],
+                                              self.base.target_h, self.base.target_w)
+            action_seq = torch.from_numpy(base_ep["actions"][start : start + T].astype("float32"))
+            reward_seq = torch.zeros(T)
+            done_seq = torch.from_numpy(base_ep["dones"][start : start + T].astype("float32"))
+            return obs_seq, action_seq, reward_seq, done_seq
+
+    filtered = [(ei, s) for (ei, s) in full.windows if ei in keep]
+    return _Subset(full, filtered)
 
 
 def load_model(cfg: WorldModelConfig, ckpt_path: str, device: torch.device) -> WorldModel:
@@ -61,7 +111,7 @@ def load_model(cfg: WorldModelConfig, ckpt_path: str, device: torch.device) -> W
 
 def horizon_mse(
     model: WorldModel,
-    val_set: VideoClipDataset,
+    val_set,
     horizon: int,
     device: torch.device,
     batch_size: int,
@@ -95,7 +145,7 @@ def horizon_mse(
 
 def collect_latents(
     model: WorldModel,
-    val_set: VideoClipDataset,
+    val_set,
     device: torch.device,
     batch_size: int,
     max_samples: int,
@@ -187,9 +237,9 @@ def main() -> None:
     cfg = WorldModelConfig.from_yaml(args.config)
     model = load_model(cfg, args.checkpoint, device)
 
-    train_ids, val_ids = split_clips(args.data, val_ratio=0.05, seed=args.seed)
-    val_set = VideoClipDataset(cfg, args.data, seq_len=cfg.seq_len, stride=2, clip_ids=val_ids)
-    print(f"[eval_v3] val_clips={val_set.n_clips} val_windows={len(val_set)} horizons={horizons}", flush=True)
+    val_set = build_val_set(args, cfg)
+    src_label = args.data if args.backend == "video" else f"{args.env} ({args.policy}, {args.n_episodes} ep)"
+    print(f"[eval_v3] backend={args.backend} val_clips={val_set.n_clips} val_windows={len(val_set)} horizons={horizons}", flush=True)
 
     mse_by_horizon: Dict[int, Tuple[float, int]] = {}
     for h in horizons:
@@ -203,7 +253,7 @@ def main() -> None:
     report = build_report(
         checkpoint=args.checkpoint,
         config_path=args.config,
-        data_root=args.data,
+        data_root=src_label,
         device=device,
         mse_by_horizon=mse_by_horizon,
         latents=latents,
