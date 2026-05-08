@@ -102,14 +102,19 @@ world-model/
 |---|---|---|---|---|---|---|
 | V1.0-1.4 | Synthétique | Conv4 64×64 | MLP | 256 | 2.5M | archived |
 | V1.5-1.7 | CarRacing-v3 random/heur/mixed | Conv4 64×64 | MLP | 256 | 2.5M | ✓ |
-| V1.8 | CarRacing teacher-forced k=5 | Conv4 64×64 | MLP | 256 | 2.5M | ✓ — compounding éliminé |
+| V1.8 | CarRacing teacher-forced k=5 | Conv4 64×64 | MLP | 256 | 2.5M | ✓ — compounding éliminé, rank 8% |
 | V2.0 | CarRacing + CEM/MPC planner | Conv4 64×64 | MLP | 256 | 2.5M | ✓ — CEM bat random |
-| **V3** | **SVD-XT video stock 256×256 T=16** | **Conv5** | **Transformer 4×8×512** | **512** | **23.8M** | **en cours 2026-05-01** |
+| V3 | SVD-XT video stock 256×256 T=16 | Conv5 | Transformer 4×8×512 | 512 | 23.8M | ✓ MSE 0.018, compounding 1.55, rank 2.9% |
+| V3.0.1 | SVD-XT (lambda_var=0.30) | Conv5 | Transformer | 512 | 23.8M | ✗ reg trop forte, MSE 6.56 |
+| V3.1 | Wan 2.2 i2v 256×256 (300 clips) | Conv5 | Transformer | 512 | 23.8M | ✗ rank collapse 0.28%, MSE 0.002 |
+| **V4** | **Gymnasium real-env 64×64** | **Conv4** | **Transformer V3** | **256** | **5.2M** | **en cours 2026-05-08** |
 
-Cibles V3 vs V1.8 :
-- MSE h=1 < 0.020 (V1.8 = 0.0135) ; partial 51 clips déjà à **0.007** ✓
-- Compounding ratio MSE(h=16)/MSE(h=1) < ×2.0 (V1.8 = ×2.8 sur h=20) ; partial = **1.54** ✓
-- **Effective rank > 80/512 (15%)** ← métrique principale (V1.8 = 8%)
+Cf. `eval_synthesis_v3.md` pour le tableau comparatif détaillé V1.8 → V3.1.
+
+Cibles V4 vs V3 :
+- MSE h=1 ≤ V3 (0.018) — env Gymnasium réel comme V1.8
+- Compounding ratio < ×2.0 (V3 SVD-XT = ×1.55, OK)
+- **Effective rank ≥ 10% / 256 (V1.8 = 8% MLP, V3 = 2.9% sur dataset vidéo)** — vérifier l'hypothèse "actions vraies > optical flow proxy"
 
 ## Pièges Win11 (DARKSTAR)
 
@@ -139,7 +144,7 @@ python scripts/dataset_v3/qa_dataset.py --root data/v3_video
 python scripts/train_v3.py --config configs/v3_video.yaml --data data/v3_video \
   --gpus 1 --num-workers 4 --blacklist data/v3_video/_qa/blacklist.txt
 
-# Eval
+# Eval (backend video par défaut)
 python scripts/eval_v3.py --checkpoint checkpoints_v3_video/epoch_0050.pt \
   --data data/v3_video --max-windows 2000 --report eval_report_v3_video.md
 
@@ -147,6 +152,35 @@ python scripts/eval_v3.py --checkpoint checkpoints_v3_video/epoch_0050.pt \
 python scripts/plan_v3.py --checkpoint checkpoints_v3_video/epoch_0050.pt \
   --data data/v3_video --n-pairs 100 --horizon 8 --report plan_report_v3.md
 ```
+
+## Lancer training V4 (Gymnasium real-env)
+
+V4 ne nécessite pas ComfyUI ni dataset disque — collecte au lancement.
+
+```bash
+# Training V4 sur LunarLanderContinuous-v3 (~30 min sur 100 ep × 200 steps × 30 epochs, 1×3090)
+python scripts/train_v4.py --config configs/v4_lunarlander.yaml \
+  --env LunarLanderContinuous-v3 --n-episodes 100 --max-episode-len 200 \
+  --policy heuristic --gpus 1 --num-workers 0 \
+  --ckpt-dir checkpoints_v4_lunarlander --log-dir runs/v4_lunarlander
+
+# Eval V4 (backend gym — recolle un dataset val avec les mêmes args)
+python scripts/eval_v3.py --backend gym --env LunarLanderContinuous-v3 \
+  --n-episodes 100 --max-episode-len 200 --policy heuristic \
+  --config configs/v4_lunarlander.yaml \
+  --checkpoint checkpoints_v4_lunarlander/epoch_0030.pt \
+  --report eval_report_v4_lunarlander.md
+
+# Plan V4 (CEM open-loop)
+python scripts/plan_v3.py --backend gym --env LunarLanderContinuous-v3 \
+  --n-episodes 100 --max-episode-len 200 --policy heuristic \
+  --config configs/v4_lunarlander.yaml \
+  --checkpoint checkpoints_v4_lunarlander/epoch_0030.pt \
+  --n-pairs 100 --horizon 8 --report plan_report_v4_lunarlander.md
+```
+
+CarRacing-v3 fonctionne aussi (heuristic policy supportée) via `--env CarRacing-v3` ;
+adapter `action_dim` dans la config (CarRacing = 3D).
 
 ## Hyperparamètres (configs/default.yaml)
 
