@@ -1,0 +1,28 @@
+# V4.2 — V4.1 + lambda_cov=0.15 (au lieu de 0.04)
+# Hypothèse V4.2 : V4.1 a montré que lambda_var seul ne corrige pas le rank
+# (var_loss satisfait par 2-3 dims hautes + reste à zéro). Le vrai levier
+# est lambda_cov, qui pénalise les corrélations inter-dim et donc force
+# l'usage de plusieurs dimensions distinctes.
+
+obs_shape: [3, 64, 64]
+action_dim: 4
+latent_dim: 256
+
+encoder_type: conv
+dynamics_type: transformer
+hidden_dim: 512
+seq_len: 16
+
+learning_rate: 0.00005
+batch_size: 32
+max_epochs: 30
+rollout_warmup_epochs: 10
+use_amp: false
+
+# VICReg — bouge LAMBDA_COV (V4.1 = 0.04 -> V4.2 = 0.15)
+lambda_var: 0.15            # garder V4.1 setting
+lambda_cov: 0.15            # CHANGEMENT vs V4.1 (0.04 -> 0.15)
+lambda_mean: 0.01
+
+use_reward_head: false
+use_done_head: false

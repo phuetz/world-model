@@ -60,7 +60,8 @@ et augmente la distance. CEM = inutilisable pour planning.
 | V3.0.1 | SVD-XT 1500 (λ_var=0.30) | Conv5 | Transformer | 0.30 | 0.04 | 23.8M | 6.5625 | ×1.20 | 7.978 | 7.2/512 (1.4 %) |
 | V3.1 | Wan 2.2 i2v 300 | Conv5 | Transformer | 0.15 | 0.04 | 23.8M | 0.0020 | ×1.84 | 0.020 | 1.4/512 (0.3 %) |
 | V4 | LunarLanderContinuous | Conv4 | Transformer | 0.04 | 0.04 | 5.2M | 0.000233 | ×2.17 | 0.015 | 2.4/256 (0.9 %) |
-| **V4.1** | LunarLanderContinuous | Conv4 | Transformer | **0.15** | 0.04 | 5.2M | **0.000695** | **×1.12** | **0.036** | **2.3/256 (0.9 %)** |
+| V4.1 | LunarLanderContinuous | Conv4 | Transformer | **0.15** | 0.04 | 5.2M | 0.000695 | ×1.12 | 0.036 | 2.3/256 (0.9 %) |
+| **V4.2** | LunarLanderContinuous | Conv4 | Transformer | 0.15 | **0.15** | 5.2M | **0.000731** | **×1.24** | **0.016** | **2.1/256 (0.8 %)** |
 
 ## Lecture
 
@@ -105,19 +106,52 @@ V4.1 confirme qu'augmenter `λ_var` ne touche pas au rank.
 
 **Hypothèse à tester en V4.2 : `λ_cov=0.15` (au lieu de 0.04).**
 
+### Diagnostic V4.2 — λ_cov rejeté aussi
+
+V4.2 a tenté `λ_cov=0.15` (en plus de `λ_var=0.15` de V4.1). Résultat :
+- Variance moyenne par dim retombe à 0.016 (V4.1 0.036 → V4.2 0.016)
+  → λ_cov fort écrase la variance individuelle au lieu de diversifier
+- **Rank = 2.12/256 (0.83 %)** — même plateau que V4 et V4.1
+- CEM toujours useless (MSE init 1e-6, ratios n/a)
+
+**Trois expériences VICReg (V4, V4.1, V4.2) → rank stagne à 0.8-0.9 %.**
+Le tuning des coefficients VICReg n'est PAS le levier sur ce setup.
+
+### Diagnostic révisé V4.2 — verrou plus fondamental
+
+Hypothèses restantes (par ordre de probabilité) :
+
+1. **Diversité dataset insuffisante** : 100 ep × heuristic policy déterministe
+   → trajectoires très similaires, occupent un sous-espace minuscule de
+   l'espace LunarLander. Le modèle peut tout fitter avec ~2 dims latentes
+   parce que c'est la dimension intrinsèque réelle du dataset.
+2. **Frames RGB quasi-statiques** : LunarLander rendu à 64×64 a très peu
+   de pixels qui changent entre frames adjacentes (fond noir + petit
+   lander mobile). VICReg sur features Conv4 d'images quasi-identiques
+   ne peut pas générer plus de diversité que le signal d'entrée n'en a.
+3. **Capacité Transformer 4×8×512 trop élevée** pour 5k windows de
+   training. Surfit à 2 dims, ignore les 254 autres.
+
+Tests proposés (par ordre de coût croissant) :
+- **V4.3 : random policy** au lieu de heuristic (changement 1 ligne, même temps)
+- **V4.4 : plus d'épisodes** (500 ep × 300 steps = ×10 transitions, ×3 temps)
+- **V4.5 : encoder/dynamics réduits** (latent_dim 64, 1 layer Transformer)
+  → forcer densité d'utilisation
+- **CarRacing-v3** : env action 3D + observation 96×96 plus riche
+
 ## Recommandations
 
 ### Court terme (à tester en priorité)
 
-1. ~~**V4.1 — λ_var=0.15**~~ ✅ fait, rank inchangé (0.9 %). Diagnostic affiné :
-   λ_var seul ne suffit pas, c'est `λ_cov` qu'il faut bouger.
-2. **V4.2 — λ_cov=0.15** (au lieu de 0.04). Hypothèse révisée la plus directe.
-3. **V4.3 — random policy** au lieu de heuristic. La politique heuristique
-   sinusoïdale produit des trajectoires très similaires d'un episode à
-   l'autre → diversité limitée. Random sample plus large.
-4. **Re-test V1.8 archi (MLP) sur LunarLander** : si MLP donne rank ≥ 8 %
-   sur LunarLander aussi, on confirme que c'est le Transformer dynamique
-   qui collapse, pas le dataset.
+1. ~~**V4.1 — λ_var=0.15**~~ ✅ fait, rank inchangé (0.9 %).
+2. ~~**V4.2 — λ_cov=0.15**~~ ✅ fait, rank inchangé (0.8 %). VICReg n'est
+   PAS le levier sur ce setup.
+3. **V4.3 — random policy** au lieu de heuristic. Coût quasi nul, peut
+   débloquer si la diversité de trajectoires était le verrou.
+4. **V4.4 — 500 ep × 300 steps** (×10 data). Temps ×3 environ.
+5. **V4.5 — latent_dim 64 + 1 layer Transformer**. Force la densité.
+6. **Re-test V1.8 archi (MLP) sur LunarLander** : si MLP donne rank ≥ 8 %
+   sur LunarLander aussi, on confirme que c'est le Transformer qui collapse.
 
 ### Moyen terme
 
@@ -141,6 +175,8 @@ V4.1 confirme qu'augmenter `λ_var` ne touche pas au rank.
   (commit `3035c1d`)
 - V4.1 : `configs/v4_1_lambda15.yaml`, `eval_report_v4_1_lambda15.md`,
   `plan_report_v4_1_lambda15.md`
-- Cette synthèse (mise à jour avec V4.1)
+- V4.2 : `configs/v4_2_lambdacov15.yaml`, `eval_report_v4_2_lambdacov15.md`,
+  `plan_report_v4_2_lambdacov15.md`
+- Cette synthèse (mise à jour avec V4.2)
 
 — Claude / DARKSTAR, 2026-05-08
