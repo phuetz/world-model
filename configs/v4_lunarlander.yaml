@@ -16,10 +16,13 @@ hidden_dim: 512
 seq_len: 16
 
 # Entraînement
-learning_rate: 0.0001       # fp32 stable (apprentissage de V3)
+# V4 a divergé epoch 3 avec lr 1e-4 + warmup 5 (loss_pred 0.06 → 97 → 8) :
+# Conv4 64x64 sur LunarLander capture peu, les latents fluctuent fort tant
+# que VICReg n'a pas convergé. Reculé à V3-stable : lr 5e-5 + warmup 10.
+learning_rate: 0.00005      # 5e-5 (V3 stable, V4 1e-4 a divergé epoch 3)
 batch_size: 32
 max_epochs: 30
-rollout_warmup_epochs: 5    # warmup en 1-step avant rollout T-step
+rollout_warmup_epochs: 10   # warmup 10 epochs en 1-step (V3 setting)
 use_amp: false              # fp32 (bf16 a divergé en V3 epoch 6)
 
 # VICReg — V1.8 setting (0.04) car env réel donne déjà du signal action,
