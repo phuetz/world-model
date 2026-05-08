@@ -1,0 +1,33 @@
+# V4 — world-model JEPA sur env Gymnasium réel (LunarLanderContinuous-v3)
+# Hypothèse V4 : actions vraies (vs optical flow proxy V3) corrigent le rank
+# collapse observé en V3.1 (rank 0.28%). V1.8 sur CarRacing actions atteignait
+# 8% rank "for free" — V4 reprend l'archi V3 (Transformer dynamique) sur env
+# réel pour combiner les deux atouts.
+
+# Conv4 64×64 (V1.8 setting) — environnement réel suffit, pas besoin de 256×256
+obs_shape: [3, 64, 64]
+action_dim: 4               # LunarLanderContinuous (2D) padded à 4 pour cohérence V3
+latent_dim: 256
+
+# Architecture : Conv4 V1.8 + Transformer V3 (combo nouvelle V4)
+encoder_type: conv          # Conv4 (V1/V2)
+dynamics_type: transformer  # causal pre-norm 4×8×512 (V3)
+hidden_dim: 512
+seq_len: 16
+
+# Entraînement
+learning_rate: 0.0001       # fp32 stable (apprentissage de V3)
+batch_size: 32
+max_epochs: 30
+rollout_warmup_epochs: 5    # warmup en 1-step avant rollout T-step
+use_amp: false              # fp32 (bf16 a divergé en V3 epoch 6)
+
+# VICReg — V1.8 setting (0.04) car env réel donne déjà du signal action,
+# pas besoin de pousser à 0.15 comme sur dataset vidéo passif
+lambda_var: 0.04
+lambda_cov: 0.04
+lambda_mean: 0.01
+
+# Pas de signal reward/done utilisé pour V4 (focus dynamic latent + rank)
+use_reward_head: false
+use_done_head: false
